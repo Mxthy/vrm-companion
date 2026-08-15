@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.vrmcompanion.app"
+    android:versionCode="1"
+    android:versionName="0.1.0">
+
+    <!-- VR Requirements -->
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" />
+    <uses-feature android:name="oculus.software.handtracking" android:required="false" />
+
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
+    <uses-permission android:name="com.oculus.permission.USE_ANCHOR_API" />
+    <uses-permission android:name="com.oculus.permission.USE_SCENE" />
+
+    <!-- Quest 3 only -->
+    <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="true" />
+    <uses-feature android:name="com.oculus.software.depth_sensing" android:required="true" />
+
+    <application
+        android:label="VRM Companion"
+        android:icon="@mipmap/app_icon"
+        android:theme="@style/UnityThemeSelector"
+        android:resizeableActivity="false">
+
+        <!-- VR Mode -->
+        <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
+
+        <!-- Passthrough -->
+        <meta-data android:name="com.oculus.passsthrough" android:value="true" />
+        <meta-data android:name="com.oculus.handtracking.frequency" android:value="HIGH" />
+
+        <activity
+            android:name="com.unity3d.player.UnityPlayerActivity"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="unityplayer.UnityActivity" android:value="true" />
+            <meta-data android:name="android.app.lib_name" android:value="unity" />
+        </activity>
+    </application>
+</manifest>
