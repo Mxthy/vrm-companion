@@ -42,22 +42,21 @@ jobs:
         run: npm install --global unity-license-activate
 
       - name: Activate license (Email/Password)
+        id: activate
         run: |
           unity-license-activate \
             "${{ secrets.UNITY_EMAIL }}" \
             "${{ secrets.UNITY_PASSWORD }}" \
             "${{ steps.alf.outputs.filePath }}"
-        env:
-          # Puppeteer needs these for headless Chrome
-          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
-          PUPPETEER_EXECUTABLE_PATH: '/usr/bin/google-chrome'
+        continue-on-error: true
 
-      - name: Install Chrome for Puppeteer (fallback)
-        if: failure()
+      - name: Install Chrome and retry if failed
+        if: steps.activate.outcome == 'failure'
         run: |
-          # Install Chrome if unity-license-activate failed due to missing browser
           npx puppeteer browsers install chrome
-          # Retry activation
+          export PUPPETEER_EXECUTABLE_PATH=$(find /root/.cache/puppeteer -name chrome -type f | head -1)
+          echo "Using Chrome at: $PUPPETEER_EXECUTABLE_PATH"
+          
           unity-license-activate \
             "${{ secrets.UNITY_EMAIL }}" \
             "${{ secrets.UNITY_PASSWORD }}" \
@@ -67,19 +66,26 @@ jobs:
       - name: Find and read .ulf file
         id: ulf
         run: |
-          # The .ulf file is generated in the current directory
           ULF_FILE=$(find . -name "*.ulf" -type f | head -1)
           
           if [ -z "$ULF_FILE" ]; then
             echo "ERROR: No .ulf file found!"
             ls -la
+            if [ -f error.png ]; then
+              echo "Error screenshot generated"
+            fi
             exit 1
           fi
           
           echo "Found ULF: $ULF_FILE"
           echo "filePath=$ULF_FILE" >> $GITHUB_OUTPUT
           
-          # Print content for verification
+          # Read content and store in output
+          CONTENT=$(cat "$ULF_FILE")
+          echo "content<<EOFMARKER" >> $GITHUB_OUTPUT
+          echo "$CONTENT" >> $GITHUB_OUTPUT
+          echo "EOFMARKER" >> $GITHUB_OUTPUT
+          
           echo "=== ULF FILE CONTENT ==="
           cat "$ULF_FILE"
           echo ""
@@ -99,7 +105,7 @@ jobs:
         with:
           name: 'UNITY_LICENSE'
           value: ${{ steps.ulf.outputs.content }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.ACCESS_TOKEN }}
 
       # Step 6: Upload error screenshot if failed
       - name: Upload error screenshot on failure
