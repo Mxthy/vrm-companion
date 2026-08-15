@@ -8,26 +8,31 @@ jobs:
     name: Generate .alf activation file
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Generate Unity Activation File via Docker
+        run: |
+          docker run --name unity-activation \
+            -e DISPLAY=:1 \
+            unityci/editor:2022.3.11f1-base \
+            bash -c "Xvfb :1 -screen 0 1024x768x24 & sleep 2 && /opt/unity/Editor/Unity -batchmode -nographics -logFile /dev/stdout -createManualActivationFile -quit"
+          
+          # Copy the .alf file out of the container
+          docker cp unity-activation:/Unity_v2022.alf . || \
+          docker cp unity-activation:/root/Unity_v2022.alf . || \
+          docker cp unity-activation:/home/Unity_v2022.alf . || \
+          (echo "Searching for .alf file..." && docker exec unity-activation find / -name "*.alf" -type f 2>/dev/null && exit 1)
+          
+          docker rm unity-activation
 
-      - name: Generate Unity Activation File
-        uses: game-ci/unity-request-activation-file@v2
-        id: get_alf
-        with:
-          unityVersion: 2022.3.11f1
-
-      - name: Upload .alf file
+      - name: Rename and upload .alf file
         uses: actions/upload-artifact@v4
         with:
           name: Unity-Activation-File
-          path: ${{ steps.get_alf.outputs.filePath }}
+          path: Unity_v2022.alf
           retention-days: 7
 
       - name: Print ALF content
         run: |
           echo "=== ALF FILE CONTENT ==="
-          cat ${{ steps.get_alf.outputs.filePath }}
+          cat Unity_v2022.alf
           echo ""
           echo "=== END ALF ==="
-          echo "File path: ${{ steps.get_alf.outputs.filePath }}"
