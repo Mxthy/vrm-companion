@@ -10,31 +10,13 @@ jobs:
     steps:
       - name: Generate Unity Activation File via Docker
         run: |
-          # Use webgl image (includes base Unity Editor, smaller than android)
           docker run --name unity-activation \
             -e DISPLAY=:1 \
             unityci/editor:2022.3.11f1-webgl-3 \
             bash -c "Xvfb :1 -screen 0 1024x768x24 & sleep 2 && /opt/unity/Editor/Unity -batchmode -nographics -logFile /dev/stdout -createManualActivationFile -quit"
           
-          # The .alf file is generated in the working directory
-          # Try multiple possible locations
-          docker cp unity-activation:/Unity_v2022.alf . 2>/dev/null || \
-          docker cp unity-activation:/root/Unity_v2022.alf . 2>/dev/null || \
-          docker cp unity-activation:/home/Unity_v2022.alf . 2>/dev/null || \
-          docker cp unity-activation:/workspace/Unity_v2022.alf . 2>/dev/null || \
-          {
-            echo "=== Searching for .alf file in container ==="
-            docker exec unity-activation find / -maxdepth 3 -name "*.alf" -type f 2>/dev/null
-            ALF_PATH=$(docker exec unity-activation find / -maxdepth 3 -name "*.alf" -type f 2>/dev/null | head -1)
-            if [ -n "$ALF_PATH" ]; then
-              docker cp "unity-activation:$ALF_PATH" ./Unity_v2022.alf
-            else
-              echo "ERROR: No .alf file found"
-              docker logs unity-activation 2>&1 | tail -50
-              exit 1
-            fi
-          }
-          
+          # The .alf file is at /Unity_v2022.3.11f1.alf (includes full version)
+          docker cp unity-activation:/Unity_v2022.3.11f1.alf ./Unity_v2022.alf
           docker rm unity-activation
           
           echo "=== ALF file found ==="
