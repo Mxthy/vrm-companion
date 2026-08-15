@@ -2,11 +2,6 @@ name: Unity License Activation & Auto-Setup
 
 on:
   workflow_dispatch:
-    inputs:
-      force_reactivate:
-        description: 'Force re-activate license even if UNITY_LICENSE exists'
-        type: boolean
-        default: false
 
 jobs:
   acquire_license:
@@ -37,50 +32,49 @@ jobs:
           echo "=== ALF generated ==="
           ls -la Unity_v2022.alf
 
-      # Step 2: Activate license using unity-license-activate (Puppeteer)
-      - name: Install unity-license-activate
-        run: npm install --global unity-license-activate
-
-      - name: Activate license (Email/Password)
-        id: activate
+      # Step 2: Install Puppeteer and run custom activation script
+      - name: Install Puppeteer
         run: |
-          unity-license-activate \
-            "${{ secrets.UNITY_EMAIL }}" \
-            "${{ secrets.UNITY_PASSWORD }}" \
-            "${{ steps.alf.outputs.filePath }}"
+          npm install puppeteer
+          npx puppeteer browsers install chrome
+
+      - name: Activate Unity License
+        id: activate
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          ALF_PATH: ${{ steps.alf.outputs.filePath }}
+        run: node scripts/activate-license.js
         continue-on-error: true
 
-      - name: Install Chrome and retry if failed
-        if: steps.activate.outcome == 'failure'
-        run: |
-          npx puppeteer browsers install chrome
-          export PUPPETEER_EXECUTABLE_PATH=$(find /root/.cache/puppeteer -name chrome -type f | head -1)
-          echo "Using Chrome at: $PUPPETEER_EXECUTABLE_PATH"
-          
-          unity-license-activate \
-            "${{ secrets.UNITY_EMAIL }}" \
-            "${{ secrets.UNITY_PASSWORD }}" \
-            "${{ steps.alf.outputs.filePath }}"
+      # Step 3: Upload screenshots for debugging
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: activation-screenshots
+          path: |
+            *.png
+            *.ulf
+          retention-days: 7
+          if-no-files-found: ignore
 
-      # Step 3: Read .ulf file content
-      - name: Find and read .ulf file
+      # Step 4: Read .ulf file content
+      - name: Read .ulf file
         id: ulf
+        if: steps.activate.outcome == 'success'
         run: |
           ULF_FILE=$(find . -name "*.ulf" -type f | head -1)
           
           if [ -z "$ULF_FILE" ]; then
             echo "ERROR: No .ulf file found!"
             ls -la
-            if [ -f error.png ]; then
-              echo "Error screenshot generated"
-            fi
             exit 1
           fi
           
           echo "Found ULF: $ULF_FILE"
           echo "filePath=$ULF_FILE" >> $GITHUB_OUTPUT
           
-          # Read content and store in output
           CONTENT=$(cat "$ULF_FILE")
           echo "content<<EOFMARKER" >> $GITHUB_OUTPUT
           echo "$CONTENT" >> $GITHUB_OUTPUT
@@ -88,37 +82,21 @@ jobs:
           
           echo "=== ULF FILE CONTENT ==="
           cat "$ULF_FILE"
-          echo ""
           echo "=== END ULF ==="
-
-      # Step 4: Upload .ulf as artifact (backup)
-      - name: Upload .ulf file
-        uses: actions/upload-artifact@v4
-        with:
-          name: Unity-License-File
-          path: ${{ steps.ulf.outputs.filePath }}
-          retention-days: 1
 
       # Step 5: Set UNITY_LICENSE secret automatically
       - name: Update UNITY_LICENSE secret
+        if: steps.ulf.outcome == 'success'
         uses: hmanzur/actions-set-secret@v2.0.0
         with:
           name: 'UNITY_LICENSE'
           value: ${{ steps.ulf.outputs.content }}
           token: ${{ secrets.ACCESS_TOKEN }}
 
-      # Step 6: Upload error screenshot if failed
-      - name: Upload error screenshot on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: activation-error-screenshot
-          path: error.png
-          retention-days: 7
-
   trigger_build:
     name: Trigger APK Build
     needs: acquire_license
+    if: success()
     runs-on: ubuntu-latest
     steps:
       - name: Trigger build workflow
