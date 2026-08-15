@@ -47,8 +47,13 @@ jobs:
           androidKeyaliasName: ${{ secrets.ANDROID_KEY_ALIAS_NAME }}
           androidKeyaliasPass: ${{ secrets.ANDROID_KEY_ALIAS_PASS }}
         env:
+          # unity-builder@v4 activates Personal licenses automatically inside
+          # the container using email+password — no manual .alf/.ulf needed.
+          # (Unity killed manual browser activation for Personal in 2023;
+          # this CLI-based activation path still works.)
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
