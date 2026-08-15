@@ -46,24 +46,14 @@ jobs:
         with:
           name: alf-file
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install Puppeteer
-        run: |
-          npm init -y
-          npm install puppeteer@24
-
       - name: Find .alf file
         id: find_alf_local
         run: |
           ALF_FILE=$(find . -name "*.alf" -print -quit)
           echo "ALF_FILE=$ALF_FILE" >> $GITHUB_ENV
 
-      - name: Activate the license (custom Puppeteer script)
-        run: node scripts/activate-license.js "${{ secrets.UNITY_EMAIL }}" "${{ secrets.UNITY_PASSWORD }}" "$ALF_FILE"
+      - name: Activate license via HTTP API
+        run: python3 scripts/activate_license.py "${{ secrets.UNITY_EMAIL }}" "${{ secrets.UNITY_PASSWORD }}" "$ALF_FILE"
 
       - name: Find .ulf file
         id: find_ulf
@@ -92,13 +82,16 @@ jobs:
           path: "*.ulf"
           retention-days: 1
 
-      - name: Upload error screenshot (on failure)
+      - name: Upload debug artifacts (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: error-screenshot
-          path: error.png
+          name: debug-artifacts
+          path: |
+            *.html
+            error.png
           retention-days: 7
+          if-no-files-found: ignore
 
   build:
     name: Step 3 - Build Quest 3 APK
