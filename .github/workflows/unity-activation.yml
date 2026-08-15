@@ -1,34 +1,128 @@
-name: Unity License Activation
+name: Unity License Activation & Auto-Setup
 
 on:
   workflow_dispatch:
+    inputs:
+      force_reactivate:
+        description: 'Force re-activate license even if UNITY_LICENSE exists'
+        type: boolean
+        default: false
 
 jobs:
-  activation:
-    name: Generate .alf activation file
+  acquire_license:
+    name: Acquire Unity License (.alf → .ulf)
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Unity Activation File via Docker
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Step 1: Generate .alf file using Unity Docker image
+      - name: Generate .alf activation file
+        id: alf
         run: |
           docker run --name unity-activation \
             -e DISPLAY=:1 \
             unityci/editor:2022.3.11f1-webgl-3 \
             bash -c "Xvfb :1 -screen 0 1024x768x24 & sleep 2 && /opt/unity/Editor/Unity -batchmode -nographics -logFile /dev/stdout -createManualActivationFile -quit"
           
-          # The .alf file is at /Unity_v2022.3.11f1.alf (includes full version)
           docker cp unity-activation:/Unity_v2022.3.11f1.alf ./Unity_v2022.alf
           docker rm unity-activation
           
-          echo "=== ALF file found ==="
+          echo "filePath=$(pwd)/Unity_v2022.alf" >> $GITHUB_OUTPUT
+          echo "=== ALF generated ==="
           ls -la Unity_v2022.alf
-          echo "=== ALF FILE CONTENT ==="
-          cat Unity_v2022.alf
-          echo ""
-          echo "=== END ALF ==="
 
-      - name: Upload .alf file
+      # Step 2: Activate license using unity-license-activate (Puppeteer)
+      - name: Install unity-license-activate
+        run: npm install --global unity-license-activate
+
+      - name: Activate license (Email/Password)
+        run: |
+          unity-license-activate \
+            "${{ secrets.UNITY_EMAIL }}" \
+            "${{ secrets.UNITY_PASSWORD }}" \
+            "${{ steps.alf.outputs.filePath }}"
+        env:
+          # Puppeteer needs these for headless Chrome
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
+          PUPPETEER_EXECUTABLE_PATH: '/usr/bin/google-chrome'
+
+      - name: Install Chrome for Puppeteer (fallback)
+        if: failure()
+        run: |
+          # Install Chrome if unity-license-activate failed due to missing browser
+          npx puppeteer browsers install chrome
+          # Retry activation
+          unity-license-activate \
+            "${{ secrets.UNITY_EMAIL }}" \
+            "${{ secrets.UNITY_PASSWORD }}" \
+            "${{ steps.alf.outputs.filePath }}"
+
+      # Step 3: Read .ulf file content
+      - name: Find and read .ulf file
+        id: ulf
+        run: |
+          # The .ulf file is generated in the current directory
+          ULF_FILE=$(find . -name "*.ulf" -type f | head -1)
+          
+          if [ -z "$ULF_FILE" ]; then
+            echo "ERROR: No .ulf file found!"
+            ls -la
+            exit 1
+          fi
+          
+          echo "Found ULF: $ULF_FILE"
+          echo "filePath=$ULF_FILE" >> $GITHUB_OUTPUT
+          
+          # Print content for verification
+          echo "=== ULF FILE CONTENT ==="
+          cat "$ULF_FILE"
+          echo ""
+          echo "=== END ULF ==="
+
+      # Step 4: Upload .ulf as artifact (backup)
+      - name: Upload .ulf file
         uses: actions/upload-artifact@v4
         with:
-          name: Unity-Activation-File
-          path: Unity_v2022.alf
+          name: Unity-License-File
+          path: ${{ steps.ulf.outputs.filePath }}
+          retention-days: 1
+
+      # Step 5: Set UNITY_LICENSE secret automatically
+      - name: Update UNITY_LICENSE secret
+        uses: hmanzur/actions-set-secret@v2.0.0
+        with:
+          name: 'UNITY_LICENSE'
+          value: ${{ steps.ulf.outputs.content }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 6: Upload error screenshot if failed
+      - name: Upload error screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: activation-error-screenshot
+          path: error.png
           retention-days: 7
+
+  trigger_build:
+    name: Trigger APK Build
+    needs: acquire_license
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger build workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-quest-apk.yml',
+              ref: 'main'
+            });
+            console.log('Build workflow triggered!');
